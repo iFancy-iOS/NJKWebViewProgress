@@ -75,8 +75,66 @@ const float NJKFinalProgressValue = 0.9f;
     [self setProgress:0.0];
 }
 
-#pragma mark -
-#pragma mark UIWebViewDelegate
+
+#pragma mark - WKWebViewDelegate
+
+- (void)webView:(WKWebView *)webView decidePolicyForNavigationAction:(WKNavigationAction *)navigationAction decisionHandler:(void (^)(WKNavigationActionPolicy))decisionHandler {
+    
+    NSURL *requestUrl = navigationAction.request.URL;
+    if ([requestUrl.path isEqualToString:completeRPCURLPath]) {
+        [self completeProgress];
+        decisionHandler(WKNavigationActionPolicyCancel);
+        return;
+    }
+    
+    if ([_wkWebViewProxyDelegate respondsToSelector:@selector(webView:decidePolicyForNavigationAction:decisionHandler:)]) {
+        [_wkWebViewProxyDelegate webView:webView decidePolicyForNavigationAction:navigationAction decisionHandler:decisionHandler];
+    }
+}
+
+// 开始调用一个主框架导航(页面开始加载时调用)
+- (void)webView:(WKWebView *)webView didStartProvisionalNavigation:(null_unspecified WKNavigation *)navigation {
+    
+    if ([_wkWebViewProxyDelegate respondsToSelector:@selector(webView:didStartProvisionalNavigation:)]) {
+        [_wkWebViewProxyDelegate webView:webView didStartProvisionalNavigation:navigation];
+    }
+    [self startProgress];
+    
+}
+
+// 开始加载数据时出现错误时调用(加载失败时调用)
+- (void)webView:(WKWebView *)webView didFailProvisionalNavigation:(null_unspecified WKNavigation *)navigation withError:(NSError *)error {
+    
+    if ([_wkWebViewProxyDelegate respondsToSelector:@selector(webView:didFailProvisionalNavigation:withError:)]) {
+        [_wkWebViewProxyDelegate webView:webView didFailProvisionalNavigation:navigation withError:error];
+    }
+    
+    [self completeProgress];
+}
+
+// 主框架导航完成时调用(页面加载完成之后调用)
+- (void)webView:(WKWebView *)webView didFinishNavigation:(null_unspecified WKNavigation *)navigation {
+    
+    if ([_wkWebViewProxyDelegate respondsToSelector:@selector(webView:didFinishNavigation:)]) {
+        [_wkWebViewProxyDelegate webView:webView didFinishNavigation:navigation];
+    }
+    
+    [self completeProgress];
+    
+}
+
+// 发生错误时调用(导航失败时会回调)
+- (void)webView:(WKWebView *)webView didFailNavigation:(null_unspecified WKNavigation *)navigation withError:(NSError *)error {
+    
+    if ([_wkWebViewProxyDelegate respondsToSelector:@selector(webView:didFailNavigation:withError:)]) {
+        [_wkWebViewProxyDelegate webView:webView didFailNavigation:navigation withError:error];
+    }
+    
+    [self completeProgress];
+}
+
+
+#pragma mark - UIWebViewDelegate
 
 - (BOOL)webView:(UIWebView *)webView shouldStartLoadWithRequest:(NSURLRequest *)request navigationType:(UIWebViewNavigationType)navigationType
 {
@@ -168,14 +226,17 @@ const float NJKFinalProgressValue = 0.9f;
     }
 }
 
-#pragma mark - 
-#pragma mark Method Forwarding
+#pragma mark - Method Forwarding
 // for future UIWebViewDelegate impl
 
 - (BOOL)respondsToSelector:(SEL)aSelector
 {
     if ( [super respondsToSelector:aSelector] )
         return YES;
+    
+    if ([self.wkWebViewProxyDelegate respondsToSelector:aSelector]) {
+        return YES;
+    }
     
     if ([self.webViewProxyDelegate respondsToSelector:aSelector])
         return YES;
@@ -187,7 +248,9 @@ const float NJKFinalProgressValue = 0.9f;
 {
     NSMethodSignature *signature = [super methodSignatureForSelector:selector];
     if(!signature) {
-        if([_webViewProxyDelegate respondsToSelector:selector]) {
+        if ([_wkWebViewProxyDelegate respondsToSelector:selector]) {
+            return [(NSObject *)_wkWebViewProxyDelegate methodSignatureForSelector:selector];
+        } else if([_webViewProxyDelegate respondsToSelector:selector]) {
             return [(NSObject *)_webViewProxyDelegate methodSignatureForSelector:selector];
         }
     }
@@ -196,9 +259,12 @@ const float NJKFinalProgressValue = 0.9f;
 
 - (void)forwardInvocation:(NSInvocation*)invocation
 {
-    if ([_webViewProxyDelegate respondsToSelector:[invocation selector]]) {
+    if ([_wkWebViewProxyDelegate respondsToSelector:[invocation selector]]) {
+        [invocation invokeWithTarget:_wkWebViewProxyDelegate];
+    } else if ([_webViewProxyDelegate respondsToSelector:[invocation selector]]) {
         [invocation invokeWithTarget:_webViewProxyDelegate];
     }
 }
 
 @end
+
